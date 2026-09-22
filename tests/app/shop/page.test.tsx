@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -64,6 +65,7 @@ describe("Shop Products Grid - Loading, Empty, and Error States", () => {
   });
 
   it("renders 'No products yet' empty state when listProducts resolves with empty array", async () => {
+  it("renders explicit empty state when listProducts resolves with empty array", async () => {
     mockListProducts.mockResolvedValue([]);
 
     render(<Products />);
@@ -78,6 +80,8 @@ describe("Shop Products Grid - Loading, Empty, and Error States", () => {
 
   it("renders error message when listProducts promise is rejected", async () => {
     mockListProducts.mockRejectedValue(new Error("Failed to load products from database"));
+  it("renders error message and removes skeleton when listProducts rejects", async () => {
+    mockListProducts.mockRejectedValue(new Error("Network connection error"));
 
     render(<Products />);
 
@@ -93,6 +97,14 @@ describe("Shop Products Grid - Loading, Empty, and Error States", () => {
     const mockProducts = [
       { id: "p1", name: "Alpha Running Shoe", price: 120, img: "/img1.jpg" },
       { id: "p2", name: "Beta Trail Runner", price: 140, img: "/img2.jpg" },
+    expect(screen.getByText("Network connection error")).toBeInTheDocument();
+    expect(screen.queryByTestId("products-empty")).not.toBeInTheDocument();
+  });
+
+  it("renders products grid when listProducts resolves with products", async () => {
+    const mockProducts = [
+      { id: "shoe-1", name: "Nike Air Zoom", price: 120, img: "https://example.com/shoe1.png" },
+      { id: "shoe-2", name: "Adidas Ultraboost", price: 150, img: "https://example.com/shoe2.png" },
     ];
     mockListProducts.mockResolvedValue(mockProducts);
 
@@ -106,6 +118,10 @@ describe("Shop Products Grid - Loading, Empty, and Error States", () => {
     expect(screen.getByText("$120")).toBeInTheDocument();
     expect(screen.getByText("Beta Trail Runner")).toBeInTheDocument();
     expect(screen.getByText("$140")).toBeInTheDocument();
+    expect(screen.getByText("Nike Air Zoom")).toBeInTheDocument();
+    expect(screen.getByText("$120")).toBeInTheDocument();
+    expect(screen.getByText("Adidas Ultraboost")).toBeInTheDocument();
+    expect(screen.getByText("$150")).toBeInTheDocument();
     expect(screen.queryByTestId("products-empty")).not.toBeInTheDocument();
   });
 });

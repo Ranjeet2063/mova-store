@@ -7,21 +7,25 @@ import { FaShoppingCart } from "react-icons/fa";
 import Cart from "../../components/Cart";
 import Modal from "../../components/Modal";
 import Toast from "../../components/Toast";
+import useToast from "../../hooks/useToast";
 import { listProducts } from "../../lib/products";
 import { ProductGridSkeleton } from "../../components/Skeleton";
 
 export default function Products() {
   const { itemCount, cartItems, addToCart, removeFromCart, totalPrice } = useCart();
+  const { toast, showToast, hideToast } = useToast(3000);
   const [showModal, setShowModal] = useState(false);
-  const [toast, setToast] = useState({ show: false, message: "" });
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     const fetchProducts = async () => {
+      setLoading(true);
+      setError(null);
       try {
         setLoading(true);
         setError(null);
@@ -37,6 +41,12 @@ export default function Products() {
         if (isMounted) {
           setLoading(false);
         }
+          setProducts(data);
+        }
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -45,11 +55,6 @@ export default function Products() {
       isMounted = false;
     };
   }, []);
-
-  const showToast = (message) => {
-    setToast({ show: true, message });
-    setTimeout(() => setToast({ show: false, message: "" }), 3000);
-  };
 
   const handleCheckout = (e) => {
     setIsCheckingOut(true);
@@ -85,6 +90,8 @@ export default function Products() {
               <p className="text-sm text-gray-400 mt-2">Check back soon for new arrivals!</p>
             </div>
           ) : (
+            <ProductGridSkeleton />
+          ) : products.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {products.map((prod) => (
                 <div key={prod.id} className="p-4 border rounded-lg shadow">
@@ -111,15 +118,20 @@ export default function Products() {
                 </div>
               ))}
             </div>
+          ) : (
+            // Only when the fetch resolved empty. On rejection the error above
+            // is the whole story, and showing "no products yet" beside it would
+            // read as an empty catalogue rather than a failed request.
+            !error && (
+              <p className="text-center py-16 text-mova-ink/70">
+                No products yet.
+              </p>
+            )
           )}
         </section>
       </div>
 
-      <Toast
-        message={toast.message}
-        show={toast.show}
-        onClose={() => setToast({ show: false, message: "" })}
-      />
+      <Toast message={toast.message} show={toast.show} onClose={hideToast} />
       <Modal show={showModal} onClose={closeModal}>
         <h2 className="text-2xl mb-4">Cart Items</h2>
         {cartItems.length === 0 ? (
@@ -128,6 +140,11 @@ export default function Products() {
           <div>
             {cartItems.map((item) => (
               <div key={item.id} className="flex justify-between items-center mb-2">
+            {cartItems.map((item, index) => (
+              <div
+                key={item.cartItemId || item.lineId || `${item.id}-${index}`}
+                className="flex justify-between items-center mb-2"
+              >
                 <div className="w-16 h-16 flex-shrink-0">
                   <Image
                     src={item.img} // Ensure this URL is correct
