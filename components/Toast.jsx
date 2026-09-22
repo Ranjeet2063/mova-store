@@ -11,6 +11,8 @@ const Toast = ({ message, show, onClose, time = 3000 }) => {
       setVisible(true);
 
       timer = setTimeout(() => {
+      let exitTimer = null;
+      const timer = setTimeout(() => {
         setVisible(false);
         exitTimer = setTimeout(() => {
           onClose();
@@ -25,6 +27,15 @@ const Toast = ({ message, show, onClose, time = 3000 }) => {
       if (exitTimer) clearTimeout(exitTimer);
     };
   }, [show, onClose, time]);
+
+      return () => {
+        clearTimeout(timer);
+        if (exitTimer !== null) clearTimeout(exitTimer);
+      };
+    } else {
+      setVisible(false);
+    }
+  }, [show, onClose, time, message]);
 
   return (
     <div
