@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useCart } from "../../context/CartContext";
 
 import Toast from "../../components/Toast";
+import useToast from "../../hooks/useToast";
 import { AiOutlineLoading3Quarters } from "react-icons/ai";
 import { MdArrowBack } from "react-icons/md";
 import Link from "next/link";
@@ -21,16 +21,41 @@ import {
 import { BsBank, BsCalendarDate } from "react-icons/bs";
 import { SiKlarna } from "react-icons/si";
 import sendMail from "../../lib/sendmail";
+import { validateOTP } from "../../lib/validation";
 import StellarCheckoutButton from "../../components/StellarCheckoutButton";
 import StellarWalletButton from "../../components/StellarWalletButton";
 import StellarOrderWatch from "../../components/StellarOrderWatch";
 import { SiStellar } from "react-icons/si";
+import { SUPPORTED_TOKENS, defaultToken, TokenConfig } from "../../lib/stellar/config";
+import { convertUsdToXlm, DEFAULT_XLM_USD_PRICE } from "../../lib/stellar/price";
+import {
+  SUPPORTED_TOKENS,
+  defaultToken,
+  TokenConfig,
+  NETWORK,
+} from "../../lib/stellar/config";
+import { convertUsdToXlm, DEFAULT_XLM_USD_PRICE } from "../../lib/stellar/price";
+import {
+  validateEmail,
+  validateName,
+  validateAddress,
+  validateCardNumber,
+  validateCardExpiry,
+  validateCardCVV,
+} from "../../lib/validation";
 
 const Checkout = () => {
-
-  const [otp, setOtp] = useState(Math.floor(Math.random() * 1000000) + 1);
+  // OTP is stored as a zero-padded 6-digit string so it always matches the format
+  // shown in the email (e.g. "000042") and can be compared with exact string
+  // equality instead of a loose numeric parse.
+  const [otp, setOtp] = useState<string>(() =>
+    String(Math.floor(Math.random() * 1000000)).padStart(6, "0")
+  );
   const [totalPrice, setTotalPrice] = useState(0);
-  const [toast, setToast] = useState({ show: false, message: "" });
+  const [selectedToken, setSelectedToken] = useState<TokenConfig>(defaultToken());
+  const [cartItems, setCartItems] = useState<any[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const { toast, showToast, hideToast } = useToast(5000);
   const [stage, setStage] = useState(1);
   const [isOtpSending, setIsOtpSending] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,21 +71,17 @@ const Checkout = () => {
     subject: "YOUR ORDER CONFIRMATION",
   });
 
-  const showToast = (message: string) => {
-    setToast({ show: true, message });
-    setTimeout(() => setToast({ show: false, message: "" }), 5000);
-  };
+  const [orderId] = useState(() => `SS-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
 
-  const [orderId] = useState(() =>
-    `SS-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
-  );
-
-  const handleStellarSuccess = (result: { amountUsd: number | string }) => {
+  const handleStellarSuccess = (result: { amountUsd: number | string; tokenSymbol?: string }) => {
+    const symbol = result.tokenSymbol || selectedToken.symbol;
     showToast(
-      `USDC payment received ✓ $${Number(result.amountUsd).toFixed(2)} · order ${orderId}`
+      `${symbol} payment received ✓ $${Number(result.amountUsd).toFixed(2)} · order ${orderId}`
     );
     setStage(3);
-    localStorage.clear();
+    localStorage.removeItem("cartItems");
+    localStorage.removeItem("itemCount");
+    localStorage.removeItem("totalPrice");
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,6 +95,7 @@ const Checkout = () => {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
     try {
       await sendMail({
@@ -85,9 +107,7 @@ const Checkout = () => {
       });
 
       setStage(2);
-      showToast(
-        "Form submitted successfully. OTP has been sent to your email."
-      );
+      showToast("Form submitted successfully. OTP has been sent to your email.");
     } catch (error) {
       setIsSubmitting(false);
       showToast("Failed to send OTP. Please try again.");
@@ -96,10 +116,20 @@ const Checkout = () => {
 
   const handleEmailConfirmationSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isOtpSending) return;
     setIsOtpSending(true);
-    if (parseInt(enteredOtp) === otp) {
+    // Validate the raw trimmed input as a 6-digit code, then compare it against the
+    // zero-padded OTP with exact string equality. We deliberately compare the raw
+    // input rather than validateOTP's sanitized value, because the validator strips
+    // non-digits ("000042abc" -> "000042") and would otherwise let digits-followed-
+    // by-junk through.
+    const entered = enteredOtp.trim();
+    const { isValid } = validateOTP(entered);
+    if (isValid && entered === otp) {
       setStage(3);
-      localStorage.clear();
+      localStorage.removeItem("cartItems");
+      localStorage.removeItem("itemCount");
+      localStorage.removeItem("totalPrice");
       showToast("OTP confirmed successfully.");
     } else {
       setIsOtpSending(false);
@@ -110,16 +140,28 @@ const Checkout = () => {
   const handleGoBack = () => {
     if (stage > 1) {
       setStage(stage - 1);
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
   };
 
   useEffect(() => {
-    const storedTotalPrice = localStorage.getItem("totalPrice");
-    if (storedTotalPrice) {
-      setTotalPrice(parseFloat(storedTotalPrice));
+    try {
+      const storedItems = JSON.parse(localStorage.getItem("cartItems") || "[]");
+      const storedTotalPrice = localStorage.getItem("totalPrice");
+      if (Array.isArray(storedItems)) {
+        setCartItems(storedItems);
+      }
+      if (storedTotalPrice) {
+        setTotalPrice(parseFloat(storedTotalPrice));
+      }
+    } catch {
+      setCartItems([]);
+    } finally {
+      setIsLoaded(true);
     }
   }, []);
+
+  const isEmptyCart = isLoaded && (cartItems.length === 0 || totalPrice <= 0);
 
   useEffect(() => {
     if (stage === 3) {
@@ -128,6 +170,24 @@ const Checkout = () => {
       localStorage.removeItem("cartItems");
     }
   }, [stage]);
+
+  if (isEmptyCart) {
+    return (
+      <div className="container mx-auto px-4 py-16 my-10 max-w-lg text-center bg-white rounded-lg shadow-md border-2 border-purple-300">
+        <h2 className="text-2xl font-bold text-gray-800 mb-3">Your cart is empty</h2>
+        <p className="text-gray-600 mb-6">
+          Looks like you have not added any items to your cart yet. Please add items to proceed with
+          checkout.
+        </p>
+        <Link
+          href="/shop"
+          className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-700 hover:bg-purple-800 transition-colors"
+        >
+          <MdArrowBack className="mr-2" /> Back to Shop
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -139,11 +199,7 @@ const Checkout = () => {
         >
           1
         </span>
-        <span
-          className={`w-20 h-1 sm:w-96 ${
-            stage >= 2 ? "bg-purple-700" : "bg-gray-200"
-          }`}
-        ></span>
+        <span className={`w-20 h-1 sm:w-96 ${stage >= 2 ? "bg-purple-700" : "bg-gray-200"}`}></span>
         <span
           className={`flex justify-center items-center w-8 h-8 sm:w-10 sm:h-10 border border-purple-700 rounded-full ${
             stage >= 2 ? "bg-purple-700 text-white" : "bg-white"
@@ -151,11 +207,7 @@ const Checkout = () => {
         >
           2
         </span>
-        <span
-          className={`w-20 h-1 sm:w-96 ${
-            stage >= 3 ? "bg-purple-700" : "bg-gray-200"
-          }`}
-        ></span>
+        <span className={`w-20 h-1 sm:w-96 ${stage >= 3 ? "bg-purple-700" : "bg-gray-200"}`}></span>
         <span
           className={`flex justify-center items-center w-8 h-8 sm:w-10 sm:h-10 border border-purple-700 rounded-full ${
             stage >= 3 ? "bg-purple-700 text-white" : "bg-white"
@@ -182,135 +234,160 @@ const Checkout = () => {
           </div>
           <div className="w-full md:w-1/2 px-4 p-4 rounded-md">
             {stage === 1 && (
-              <form
-                onSubmit={handleSubmit}
-                className="bg-white p-4 rounded shadow-md"
-              >
+              <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow-md">
                 <h2 className="text-2xl mb-4 text-center">Checkout</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="mb-4">
-                    <label className="block text-gray-700">First Name</label>
+                    <label htmlFor="checkout-first-name" className="block text-gray-700">First Name</label>
                     <input
+                      id="checkout-first-name"
                       type="text"
                       name="firstName"
                       value={formData.firstName}
                       onChange={handleChange}
                       required
-                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
+                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block text-gray-700">Last Name</label>
+                    <label htmlFor="checkout-last-name" className="block text-gray-700">Last Name</label>
                     <input
+                      id="checkout-last-name"
                       type="text"
                       name="lastName"
                       value={formData.lastName}
                       onChange={handleChange}
                       required
-                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
+                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block text-gray-700">Email</label>
+                    <label htmlFor="checkout-email" className="block text-gray-700">Email</label>
                     <input
+                      id="checkout-email"
                       type="email"
                       name="email"
                       value={formData.email}
                       onChange={handleChange}
                       required
-                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
+                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block text-gray-700">Address</label>
+                    <label htmlFor="checkout-address" className="block text-gray-700">Address</label>
                     <input
+                      id="checkout-address"
                       type="text"
                       name="address"
                       value={formData.address}
                       onChange={handleChange}
                       required
-                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
+                      className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                     />
                   </div>
                   <div className="mb-4">
-                    <label className="block text-gray-700">Card Number</label>
+                    <label htmlFor="checkout-card-number" className="block text-gray-700">Card Number</label>
                     <div className="relative flex justify-center items-center">
                       <input
+                        id="checkout-card-number"
                         type="text"
                         name="cardNumber"
                         value={formData.cardNumber}
                         onChange={(e) => {
                           let { value } = e.target;
-                          if (value.length > 16) {
-                            value = value.slice(0, 16);
+                          value = value.replace(/\s+/g, "").replace(/[^0-9]/g, "");
+                          if (value.length > 19) {
+                            value = value.slice(0, 19);
                           }
                           setFormData((prevData) => ({
                             ...prevData,
                             cardNumber: value,
                           }));
                         }}
-                        maxLength={16}
+                        maxLength={19}
+                        placeholder="16-digit card number"
                         required
-                        className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
+                        className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                       />
-                      <FaCreditCard className="absolute top-1/2 right-8 transform -translate-y-1/2 text-gray-500" />
+                      <FaCreditCard
+                        className="absolute top-1/2 right-8 transform -translate-y-1/2 text-gray-500"
+                        aria-hidden="true"
+                      />
                     </div>
                   </div>
                   <div className="mb-4">
-                    <label className="block text-gray-700">Expiry Date</label>
+                    <label htmlFor="checkout-expiry-date" className="block text-gray-700">Expiry Date</label>
                     <div className="relative flex justify-center items-center">
                       <input
+                        id="checkout-expiry-date"
                         type="text"
                         name="expiryDate"
                         value={formData.expiryDate}
                         onChange={(e) => {
                           let { value } = e.target;
-                          value = value.replace(/[^0-9]/g, "");
-                          if (value.length > 6) {
-                            value = value.slice(0, 6);
+                          value = value.replace(/[^0-9/]/g, "");
+                          if (
+                            value.length === 2 &&
+                            !value.includes("/") &&
+                            formData.expiryDate.length === 1
+                          ) {
+                            value = value + "/";
+                          }
+                          if (value.length > 5) {
+                            value = value.slice(0, 5);
                           }
                           setFormData((prevData) => ({
                             ...prevData,
                             expiryDate: value,
                           }));
                         }}
-                        placeholder="DD/MM/YY"
-                        maxLength={6}
-                        className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
+                        placeholder="MM/YY"
+                        maxLength={5}
+                        className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                         required
                       />
-                      <BsCalendarDate className="absolute top-1/2 right-8 transform -translate-y-1/2 text-gray-500" />
+                      <BsCalendarDate
+                        className="absolute top-1/2 right-8 transform -translate-y-1/2 text-gray-500"
+                        aria-hidden="true"
+                      />
                     </div>
                   </div>
 
                   <div className="mb-4">
-                    <label className="block text-gray-700">Cvv</label>
+                    <label htmlFor="checkout-cvv" className="block text-gray-700">Cvv</label>
                     <div className="relative flex justify-center items-center">
                       <input
+                        id="checkout-cvv"
                         type="text"
-                        name="cardNumber"
+                        name="cvv"
                         value={formData.cvv}
                         onChange={(e) => {
                           let { value } = e.target;
-                          if (value.length > 3) {
-                            value = value.slice(0, 3);
+                          value = value.replace(/[^0-9]/g, "");
+                          if (value.length > 4) {
+                            value = value.slice(0, 4);
                           }
                           setFormData((prevData) => ({
                             ...prevData,
                             cvv: value,
                           }));
                         }}
-                        maxLength={3}
+                        placeholder="CVV"
+                        maxLength={4}
+                        className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
                         required
-                        className="w-full sm:w-64 lg:w-full px-3 py-2 border rounded"
                       />
-                      <FaCreditCard className="absolute top-1/2 right-8 transform -translate-y-1/2 text-gray-500" />
+                      <FaCreditCard
+                        className="absolute top-1/2 right-8 transform -translate-y-1/2 text-gray-500"
+                        aria-hidden="true"
+                      />
                     </div>
                   </div>
                 </div>
                 <button
                   type="submit"
-                  className="w-full flex justify-center items-center bg-purple-500 text-white py-2 rounded hover:bg-purple-700 transition-colors"
+                  disabled={isSubmitting}
+                  className="w-full flex justify-center items-center bg-purple-500 text-white py-2 rounded hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
@@ -329,22 +406,66 @@ const Checkout = () => {
                   <span className="h-px flex-1 bg-gray-300" />
                   <span className="text-xs uppercase tracking-wider text-gray-500 flex items-center gap-2">
                     <SiStellar size={16} className="text-purple-600" />
-                    or pay with Stellar (USDC)
+                    or pay with Stellar ({selectedToken.symbol})
                   </span>
                   <span className="h-px flex-1 bg-gray-300" />
                 </div>
+
+                {/* Token Selector */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold text-gray-700">Select Payment Token:</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SUPPORTED_TOKENS.map((tok) => {
+                      const isSelected = selectedToken.symbol === tok.symbol;
+                      return (
+                        <button
+                          key={tok.symbol}
+                          type="button"
+                          onClick={() => setSelectedToken(tok)}
+                          className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
+                            isSelected
+                              ? "border-purple-600 bg-purple-50 text-purple-700 font-semibold shadow-sm"
+                              : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          {tok.isNative ? (
+                            <SiStellar size={15} className="text-purple-600" />
+                          ) : (
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                              $
+                            </span>
+                          )}
+                          <span>{tok.symbol}</span>
+                          {tok.isNative && (
+                            <span className="text-[10px] text-purple-600 font-normal">
+                              (Native)
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedToken.isNative && totalPrice > 0 && (
+                    <div className="mt-1 flex items-center justify-between text-xs bg-purple-50 border border-purple-100 rounded px-2.5 py-1.5 text-purple-800">
+                      <span>Rate: 1 XLM ≈ ${DEFAULT_XLM_USD_PRICE} USD</span>
+                      <span className="font-semibold">≈ {convertUsdToXlm(totalPrice)} XLM</span>
+                    </div>
+                  )}
+                </div>
+
                 <StellarWalletButton />
                 <StellarCheckoutButton
                   amountUsd={totalPrice}
                   orderId={orderId}
+                  token={selectedToken}
                   disabled={isSubmitting || totalPrice <= 0}
                   onSuccess={handleStellarSuccess}
                 />
                 <StellarOrderWatch orderId={orderId} enabled={stage === 1} />
                 <p className="text-[11px] text-gray-400 text-center">
-                  Order #{orderId} · USDC (testnet) is escrowed by a Soroban smart
-                  contract until we ship, then released to our merchant wallet. Refunds
-                  go straight back on-chain. No card needed.
+                  Order #{orderId} · {selectedToken.symbol} (testnet) is escrowed by a Soroban smart
+                  contract until we ship, then released to our merchant wallet. Refunds go straight
+                  back on-chain. No card needed.
                 </p>
               </div>
             )}
@@ -356,22 +477,27 @@ const Checkout = () => {
                 <h2 className="text-2xl mb-4 text-center">Confirm OTP</h2>
                 <span className="text-md">An OTP was sent to your email</span>
                 <div className="mb-4">
-                  <label className="block text-gray-700">
+                  <label htmlFor="checkout-otp" className="block text-gray-700">
                     Please confirm OTP
                   </label>
                   <input
+                    id="checkout-otp"
                     type="text"
                     name="otpConfirmation"
                     value={enteredOtp}
                     onChange={handleOtpChange}
                     required
+                    maxLength={6}
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
                     placeholder="OTP"
                     className="w-64 px-3 py-2 border rounded"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-purple-500 text-white flex justify-center items-center py-2 rounded hover:bg-purple-700 transition-colors"
+                  disabled={isOtpSending}
+                  className="w-full bg-purple-500 text-white flex justify-center items-center py-2 rounded hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isOtpSending ? (
                     <>
@@ -395,12 +521,8 @@ const Checkout = () => {
             {stage === 3 && (
               <div className="bg-white p-4 rounded shadow-md h-full flex flex-col justify-center items-center">
                 <h2 className="text-6xl mb-4 text-center">Order Completed.</h2>
-                <p className="text-center">
-                  Your order has been placed successfully.
-                </p>
-                <span className="text-center">
-                  Thanks for Shopping with us 🥰🥰🥰
-                </span>
+                <p className="text-center">Your order has been placed successfully.</p>
+                <span className="text-center">Thanks for Shopping with us 🥰🥰🥰</span>
                 <Link
                   href="/shop"
                   className="text-center mt-8 py-2 bg-purple-700 hover:bg-purple-500 rounded-md px-2"
@@ -412,12 +534,7 @@ const Checkout = () => {
           </div>
         </div>
       </div>
-      <Toast
-        message={toast.message}
-        show={toast.show}
-        onClose={() => setToast({ show: false, message: "" })}
-        time={4000}
-      />
+      <Toast message={toast.message} show={toast.show} onClose={hideToast} time={4000} />
     </>
   );
 };
