@@ -41,6 +41,7 @@ describe("mapAuthUser", () => {
       email: "ada@example.com",
       displayName: "Ada Lovelace",
       photoURL: null,
+      isAdminClaim: false,
     });
   });
 

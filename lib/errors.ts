@@ -159,6 +159,13 @@ export const STELLAR_ERRORS: Record<string, AppError> = {
     recoverable: true,
     action: "Check wallet",
   },
+  ORDER_ALREADY_PAID: {
+    code: "STELLAR_ORDER_ALREADY_PAID",
+    message: "Order already paid",
+    userMessage: "This order has already been paid for.",
+    severity: "error",
+    recoverable: false,
+  },
 };
 
 // =============================================================================
@@ -174,7 +181,7 @@ const SUPABASE_AUTH_CODE_MAP: Record<string, string> = {
   validation_failed: "Unable to validate email address: invalid format",
 };
 
-const AUTH_ERRORS: Record<string, AppError> = {
+export const AUTH_ERRORS: Record<string, AppError> = {
   "User already registered": {
     code: "AUTH_EMAIL_EXISTS",
     message: "Email already in use",
@@ -217,7 +224,7 @@ const AUTH_ERRORS: Record<string, AppError> = {
 // General Error Messages
 // =============================================================================
 
-const GENERAL_ERRORS: Record<string, AppError> = {
+export const GENERAL_ERRORS: Record<string, AppError> = {
   ValidationError: {
     code: "VALIDATION_ERROR",
     message: "Validation error",
@@ -328,8 +335,8 @@ export function parseError(error: unknown): AppError {
 function parseErrorMessage(message: string): AppError {
   const lowerMessage = message.toLowerCase();
 
-  // Check Stellar errors by key or code
-  for (const [key, appError] of Object.entries(STELLAR_ERRORS)) {
+  // Check auth errors by message key or code first
+  for (const [key, appError] of Object.entries(AUTH_ERRORS)) {
     if (
       lowerMessage.includes(key.toLowerCase()) ||
       lowerMessage.includes(appError.code.toLowerCase())
@@ -338,7 +345,24 @@ function parseErrorMessage(message: string): AppError {
     }
   }
 
+  // Check Stellar errors by key or code
+  for (const [key, appError] of Object.entries(STELLAR_ERRORS)) {
+    const normalizedKey = key.toLowerCase().replace(/_/g, "");
+    const normalizedMsg = lowerMessage.replace(/[\s_]/g, "");
+    if (
+      lowerMessage.includes(key.toLowerCase()) ||
+      lowerMessage.includes(appError.code.toLowerCase()) ||
+      lowerMessage.includes(appError.message.toLowerCase()) ||
+      normalizedMsg.includes(normalizedKey)
+    ) {
+      return appError;
+    }
+  }
+
   // Check for common error patterns
+  if (lowerMessage.includes("order already paid") || lowerMessage.includes("orderalreadypaid")) {
+    return STELLAR_ERRORS.ORDER_ALREADY_PAID;
+  }
   if (lowerMessage.includes("insufficient") || lowerMessage.includes("balance")) {
     return STELLAR_ERRORS.INSUFFICIENT_BALANCE;
   }

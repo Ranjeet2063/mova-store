@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import useToast from "../../hooks/useToast";
 import { FaGithub, FaTwitter, FaDiscord } from "react-icons/fa";
 import sendMail from "../../lib/sendmail";
 
@@ -30,7 +31,7 @@ const ContactUs = () => {
     email: "",
     message: "",
   });
-  const [toast, setToast] = useState({ show: false, message: "" });
+  const { toast, showToast, hideToast } = useToast(5000);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -54,11 +55,6 @@ const ContactUs = () => {
       showToast("Unable to send message, please try again later");
     }
     setIsLoading(false);
-  };
-
-  const showToast = (message) => {
-    setToast({ show: true, message });
-    setTimeout(() => setToast({ show: false, message: "" }), 5000);
   };
 
   return (
@@ -143,6 +139,66 @@ const ContactUs = () => {
                   role="alert"
                   aria-live="polite"
                   className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg"
+            <h3 className="text-xl font-semibold text-gray-900 mb-6">
+              Send us a message
+            </h3>
+        <form onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 gap-4 mb-4">
+            <input
+              id="contact-name"
+              type="text"
+              name="name"
+              aria-label="Your Name"
+              value={formData.name}
+              onChange={handleChange}
+              placeholder="Your Name"
+              className="border border-gray-300 rounded-lg p-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              required
+            />
+            <input
+              id="contact-email"
+              type="email"
+              name="email"
+              aria-label="Your Email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="Your Email"
+              className="border border-gray-300 rounded-lg p-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              required
+            />
+            <textarea
+              id="contact-message"
+              name="message"
+              aria-label="Your Message"
+              value={formData.message}
+              onChange={handleChange}
+              placeholder="Your Message"
+              rows="4"
+              className="border border-gray-300 rounded-lg p-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              required
+            />
+          </div>
+          {error && (
+            <div
+              role="alert"
+              aria-live="polite"
+              className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg"
+            >
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            className="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300 ease-in-out flex items-center justify-center"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <svg
+                  className="animate-spin h-5 w-5 mr-3 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
                 >
                   {error}
                 </div>
@@ -197,10 +253,7 @@ const ContactUs = () => {
       {toast.show && (
         <div className="fixed bottom-5 right-5 bg-gray-800 text-white p-3 rounded shadow-lg transition-transform transform translate-y-0 ease-in-out duration-300">
           {toast.message}
-          <button
-            onClick={() => setToast({ show: false, message: "" })}
-            className="ml-4 text-purple-500"
-          >
+          <button onClick={hideToast} className="ml-4 text-purple-500">
             ✕
           </button>
         </div>

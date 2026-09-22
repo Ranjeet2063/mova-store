@@ -13,6 +13,7 @@ import {
   xdr,
   Keypair,
   StrKey,
+  Address,
 } from "@stellar/stellar-sdk";
 
 import {
@@ -25,7 +26,7 @@ import {
   tokenForContract,
 } from "./config";
 import { connectWallet, signWithFreighter } from "./freighter";
-import { hashOrderId, bytesToHex } from "./scval";
+import { hashOrderId, bytesToHex, hexToBytes } from "./scval";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,7 +86,7 @@ export async function readOrder(orderId: string): Promise<OrderDetails | null> {
   const server = new rpc.Server(RPC_URL);
   const contract = new Contract(CHECKOUT_CONTRACT_ID);
 
-  const orderIdHashBytes = await hashOrderId(orderId);
+  const orderIdHashBytes = await resolveOrderIdHash(orderId);
   const orderIdHash = bytesToHex(orderIdHashBytes);
 
   const account = await server
@@ -162,9 +163,7 @@ export async function readOrder(orderId: string): Promise<OrderDetails | null> {
             break;
           case "token":
             if (val.switch() === xdr.ScValType.scvAddress()) {
-              order.token = StrKey.encodeContract(
-                Buffer.from(val.address().contractId() as unknown as Uint8Array)
-              );
+              order.token = StrKey.encodeContract(val.address().contractId() as any);
             }
             break;
           case "timestamp":
@@ -207,7 +206,7 @@ export async function dispatchOrder(orderId: string): Promise<OrderActionResult>
     const server = new rpc.Server(RPC_URL);
     const contract = new Contract(CHECKOUT_CONTRACT_ID);
 
-    const orderIdHashBytes = await hashOrderId(orderId);
+    const orderIdHashBytes = await resolveOrderIdHash(orderId);
 
     const account = await server.getAccount(publicKey);
 
@@ -280,7 +279,7 @@ export async function refundOrder(orderId: string): Promise<OrderActionResult> {
     const server = new rpc.Server(RPC_URL);
     const contract = new Contract(CHECKOUT_CONTRACT_ID);
 
-    const orderIdHashBytes = await hashOrderId(orderId);
+    const orderIdHashBytes = await resolveOrderIdHash(orderId);
 
     const account = await server.getAccount(publicKey);
 
@@ -467,5 +466,31 @@ export function eventToOrder(
     timestamp,
     ledger,
     txHash,
+  };
+}
+
+/**
+ * Merges an incoming OrderEvent into an existing OrderEvent.
+ * When a newer lifecycle event (e.g. dispatch or refund) arrives for an existing order,
+ * it updates lifecycle fields (status, ledger, txHash, timestamp) while preserving
+ * the original payment and buyer fields (buyer, token, tokenSymbol, amount, amountRaw).
+ */
+export function mergeOrderEvents(existing: OrderEvent, incoming: OrderEvent): OrderEvent {
+  // Only update if the incoming event is from a newer or equal ledger
+  if (incoming.ledger < existing.ledger) {
+    return existing;
+  }
+
+  return {
+    ...existing,
+    status: incoming.status !== "Unknown" ? incoming.status : existing.status,
+    ledger: incoming.ledger,
+    txHash: incoming.txHash || existing.txHash,
+    timestamp: incoming.timestamp || existing.timestamp,
+    buyer: existing.buyer || incoming.buyer,
+    token: existing.token || incoming.token,
+    tokenSymbol: existing.tokenSymbol || incoming.tokenSymbol,
+    amount: existing.amount || incoming.amount,
+    amountRaw: existing.amountRaw || incoming.amountRaw,
   };
 }

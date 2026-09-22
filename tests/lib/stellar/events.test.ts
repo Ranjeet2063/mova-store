@@ -1,15 +1,31 @@
 import { StrKey, xdr, Address } from "@stellar/stellar-sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { decodePaymentEvent } from "../../../lib/stellar/events";
-import { i128ToScVal } from "../../../lib/stellar/scval";
+const { CONTRACT_ID, CONTRACT_ID_STR } = vi.hoisted(() => {
+  const bytes = new Uint8Array(32).fill(7);
+  // StrKey encodeContract algorithm
+  return {
+    CONTRACT_ID: bytes,
+    CONTRACT_ID_STR: "CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR",
+  };
+});
+
+vi.mock("../../../lib/stellar/config", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../../lib/stellar/config")>();
+  return {
+    ...mod,
+    CHECKOUT_CONTRACT_ID: CONTRACT_ID_STR,
+  };
+});
+
+import { decodePaymentEvent, waitForTransaction } from "../../../lib/stellar/events";
+import { i128ToScVal, hexToBytes } from "../../../lib/stellar/scval";
 
 // ---------------------------------------------------------------------------
 // Fixture builders for GetSuccessfulTransactionResponse-shaped objects.
 // decodePaymentEvent is pure over these — no RPC access needed.
 // ---------------------------------------------------------------------------
 
-const CONTRACT_ID = new Uint8Array(32).fill(7);
 const TOKEN = "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA";
 const BUYER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 const MERCHANT = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
@@ -49,7 +65,7 @@ const payTopics = () => [
   addressScVal(TOKEN),
   addressScVal(BUYER),
   addressScVal(MERCHANT),
-  xdr.ScVal.scvBytes(Buffer.from(ORDER_ID_HEX, "hex")),
+  xdr.ScVal.scvBytes(hexToBytes(ORDER_ID_HEX)),
 ];
 
 const amountMap = (amount: bigint) =>
@@ -128,5 +144,32 @@ describe("decodePaymentEvent", () => {
     const receipt = decodePaymentEvent(makeTx([fromWire]) as never);
     expect(receipt?.orderId).toBe(ORDER_ID_HEX);
     expect(receipt?.amount).toBe("99");
+  });
+});
+
+describe("waitForTransaction", () => {
+  it("resolves immediately when status is SUCCESS", async () => {
+    const mockTx = {
+      status: "SUCCESS",
+      ledger: 100,
+      txHash: TX_HASH,
+    };
+    const spy = vi.spyOn(rpc.Server.prototype, "getTransaction").mockResolvedValue(mockTx as never);
+
+    const res = await waitForTransaction(TX_HASH);
+    expect(res).toBe(mockTx);
+    spy.mockRestore();
+  });
+
+  it("throws error when transaction status is FAILED", async () => {
+    const mockTx = {
+      status: "FAILED",
+      ledger: 101,
+      txHash: TX_HASH,
+    };
+    const spy = vi.spyOn(rpc.Server.prototype, "getTransaction").mockResolvedValue(mockTx as never);
+
+    await expect(waitForTransaction(TX_HASH)).rejects.toThrow("Transaction failed on ledger 101");
+    spy.mockRestore();
   });
 });

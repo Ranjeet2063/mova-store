@@ -74,4 +74,54 @@ describe("AuthContext getSession rejection handling", () => {
     expect(result.current.isAdmin).toBe(true);
     expect(result.current.isAuthenticated).toBe(true);
   });
+
+  it("recognizes admin when app_metadata.is_admin is true even if email is not in whitelist", async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          user: {
+            id: "u456",
+            email: "custom-admin@randomdomain.org",
+            user_metadata: { full_name: "Custom Admin" },
+            app_metadata: { is_admin: true },
+          },
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.user).not.toBeNull();
+    expect(result.current.isAdmin).toBe(true);
+    expect(result.current.isAuthenticated).toBe(true);
+  });
+
+  it("denies admin when not in whitelist and no admin claim", async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          user: {
+            id: "u789",
+            email: "buyer@normaluser.com",
+            user_metadata: { full_name: "Normal Buyer" },
+            app_metadata: {},
+          },
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.user).not.toBeNull();
+    expect(result.current.isAdmin).toBe(false);
+    expect(result.current.isAuthenticated).toBe(true);
+  });
 });

@@ -30,6 +30,15 @@ vi.mock("../../lib/stellar/checkout", () => ({
   payWithStellar: (...args) => mockPayWithStellar(...args),
 }));
 
+vi.mock("../../lib/stellar/config", () => ({
+  defaultToken: () => ({
+    contractId: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: 7,
+  }),
+}));
+
 const ADDR = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 const TX_HASH = "0123456789abcdef".repeat(4);
 
@@ -155,5 +164,59 @@ describe("StellarCheckoutButton", () => {
     expect(screen.getByText("$12.34 USDC · order SS-TEST-1")).toBeTruthy();
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(onSuccess).toHaveBeenCalledWith(successResult());
+  });
+
+  it("renders Pay with XLM and passes token to payWithStellar when XLM token is provided", async () => {
+    mockCurrentAddress.mockResolvedValue(ADDR);
+    const xlmToken = {
+      contractId: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      symbol: "XLM",
+      name: "Stellar Lumens",
+      decimals: 7,
+      isNative: true,
+    };
+    mockPayWithStellar.mockResolvedValue({
+      amountUsd: 12,
+      tokenAmount: 100,
+      tokenSymbol: "XLM",
+      hash: TX_HASH,
+      receipt: { ledger: 5000, orderId: "abcd".repeat(8) },
+      simulation: null,
+    });
+
+    render(
+      <StellarCheckoutButton
+        amountUsd={12}
+        orderId="SS-XLM-1"
+        token={xlmToken}
+      />
+    );
+
+    // 12 USD / 0.12 = 100 XLM
+    expect(screen.getByText(/Pay with XLM/i)).toBeInTheDocument();
+    expect(screen.getByText(/~100\.00 XLM/i)).toBeInTheDocument();
+
+    await act(async () => {
+      // let the mount-time currentAddress() resolve and state settle
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button"));
+      await Promise.resolve();
+    });
+
+    expect(mockPayWithStellar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountUsd: 12,
+        orderId: "SS-XLM-1",
+        publicKey: ADDR,
+        token: xlmToken,
+        tokenAmount: 100,
+      })
+    );
+
+    expect(screen.getByText("Payment confirmed ✓")).toBeInTheDocument();
+    expect(screen.getByText(/~100\.00 XLM/i)).toBeInTheDocument();
   });
 });

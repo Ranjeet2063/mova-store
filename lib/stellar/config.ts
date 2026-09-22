@@ -15,9 +15,15 @@ import { Networks } from "@stellar/stellar-sdk";
 export const NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK ?? "testnet";
 export const IS_MAINNET = NETWORK === "mainnet";
 
+// Mainnet default matches lib/env.ts STELLAR_DEFAULTS.mainnet and the endpoint
+// docs/MAINNET_DEPLOYMENT.md tells operators to configure. Keep the three in
+// step: this value is what an operator gets when the env var is unset.
 export const RPC_URL =
   process.env.NEXT_PUBLIC_STELLAR_RPC_URL ??
   (IS_MAINNET ? "https://soroban-rpc.stellar.org" : "https://soroban-testnet.stellar.org");
+  (IS_MAINNET
+    ? "https://soroban-rpc.mainnet.stellar.gateway.fm"
+    : "https://soroban-testnet.stellar.org");
 
 export const NETWORK_PASSPHRASE =
   process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ??
@@ -39,7 +45,7 @@ export const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT
 // Native XLM Stellar Asset Contract ids.
 //
 // Testnet value is empirically verified (balance/decimals simulated against
-// soroban-testnet.stellar.org; see docs/ARCHITECTURE.md). The mainnet value
+// soroban-testnet.stellar.gateway.fm; see docs/ARCHITECTURE.md). The mainnet value
 // comes from the stellar-cli `native` built-in alias table and should be
 // confirmed against the live mainnet RPC before first use.
 export const TESTNET_NATIVE_ASSET_CONTRACT_ID =
@@ -112,3 +118,4 @@ export const EVENT_START_LEDGER_BACKFILL = 100;
 // Safety buffer added on top of the simulated resource fee so the tx has
 // headroom to cover fees that drift between simulation and inclusion.
 export const FEE_BUFFER_STROOPS = BigInt(500000);
+

@@ -94,13 +94,17 @@ const ProductsAdminContent = () => {
                   </td>
                   <td className="py-4 px-6">
                     <button
-                      className="text-blue-600 hover:text-blue-800 font-semibold mr-4"
+                      type="button"
+                      aria-label={`Edit ${product.name}`}
+                      className="text-blue-600 hover:text-blue-800 font-semibold mr-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded px-1"
                       onClick={() => setSelectedProductId(product.id)}
                     >
                       Edit
                     </button>
                     <button
-                      className="text-purple-600 hover:text-purple-800 font-semibold"
+                      type="button"
+                      aria-label={`Delete ${product.name}`}
+                      className="text-red-600 hover:text-red-800 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 rounded px-1"
                       onClick={() => handleDelete(product.id)}
                     >
                       Delete

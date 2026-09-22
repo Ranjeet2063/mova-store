@@ -18,6 +18,17 @@ export default function Footer() {
           </Link>
           <Link href="/" className="transition hover:underline hover:underline-offset-1">
             24/7 Customer Service
+          <Link href="/terms" className="transition hover:underline hover:underline-offset-1">
+            Terms of Use
+          </Link>
+          <Link href="/privacy" className="transition hover:underline hover:underline-offset-1">
+            Privacy Policy
+          </Link>
+          <Link href="/about" className="transition hover:underline hover:underline-offset-1">
+            About Us
+          </Link>
+          <Link href="/contact" className="transition hover:underline hover:underline-offset-1">
+            Contact Us
           </Link>
         </span>
         <span className="my-10 sm:my-0 sm:pl-10">

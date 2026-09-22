@@ -8,6 +8,7 @@ import {
   defaultToken,
   USDC_DECIMALS,
 } from "./config";
+import { convertUsdToXlm } from "./price";
 import { ensureNetwork, signWithFreighter, WalletError } from "./freighter";
 import { decodePaymentEvent, PaymentReceipt, waitForTransaction } from "./events";
 import { addressToScVal, bytes32ToScVal, bytesToHex, hashOrderId, i128ToScVal } from "./scval";
@@ -19,6 +20,8 @@ export { fundTestnetAccount } from "./account";
 export interface PayOptions {
   /** Price in dollars (USD), converted to token raw units internally. */
   amountUsd: number;
+  /** Optional explicit token amount override (e.g. converted XLM amount). */
+  tokenAmount?: number;
   /** Human-readable order id (any string), hashed to 32 bytes for the contract. */
   orderId: string;
   /** Buyer's Freighter public key. */
@@ -34,6 +37,8 @@ export interface PayResult {
   status: string;
   receipt: PaymentReceipt | null;
   amountUsd: number;
+  tokenAmount: number;
+  tokenSymbol: string;
   amountRaw: bigint;
   /** Pre-flight simulation details (see lib/stellar/simulate.ts). */
   simulation: {
@@ -82,7 +87,10 @@ export async function payWithStellar(options: PayOptions): Promise<PayResult> {
     );
   }
 
-  const amountRaw = usdToRawUnits(amountUsd);
+  const effectiveTokenAmount = token.isNative
+    ? (options.tokenAmount ?? convertUsdToXlm(amountUsd))
+    : (options.tokenAmount ?? amountUsd);
+  const amountRaw = usdToRawUnits(effectiveTokenAmount);
   const orderBytes = await hashOrderId(orderId);
 
   // 1. Network guard.
@@ -151,6 +159,8 @@ export async function payWithStellar(options: PayOptions): Promise<PayResult> {
     status: txResult.status,
     receipt,
     amountUsd,
+    tokenAmount: effectiveTokenAmount,
+    tokenSymbol: token.symbol,
     amountRaw,
     simulation: {
       minResourceFeeStroops: report.minResourceFee?.toString() ?? "0",
