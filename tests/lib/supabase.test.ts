@@ -154,3 +154,31 @@ describe("supabase/schema.sql RLS policies", () => {
     expect(sql).toContain("bucket_id = 'products' and public.is_admin()");
   });
 });
+
+describe("mapAuthUser admin claim mapping", () => {
+  it("extracts isAdminClaim from app_metadata", async () => {
+    const { mapAuthUser } = await import("../../lib/auth.js");
+
+    const nonAdmin = mapAuthUser({
+      id: "u1",
+      email: "user@test.com",
+      user_metadata: { full_name: "Test User" },
+      app_metadata: {},
+    });
+    expect(nonAdmin?.isAdminClaim).toBe(false);
+
+    const admin = mapAuthUser({
+      id: "u2",
+      email: "admin@test.com",
+      user_metadata: { full_name: "Admin User" },
+      app_metadata: { is_admin: true },
+    });
+    expect(admin?.isAdminClaim).toBe(true);
+
+    const missingMeta = mapAuthUser({
+      id: "u3",
+      email: "plain@test.com",
+    });
+    expect(missingMeta?.isAdminClaim).toBe(false);
+  });
+});
